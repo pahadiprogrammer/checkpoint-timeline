@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-09-21T23:52:33+05:30",
+  "projects": {
+    "checkpoint-timeline": [
+      {
+        "id": "checkpoint-timeline-0001-1790014953",
+        "seq": 1,
+        "ts": "2026-09-21T23:52:33+05:30",
+        "project": "checkpoint-timeline",
+        "label": "scaffold CLI + static viewer",
+        "note": "zero-dep python CLI + vanilla-JS timeline.html",
+        "files": []
+      },
+      {
+        "id": "checkpoint-timeline-0002-1790014953",
+        "seq": 2,
+        "ts": "2026-09-21T23:52:33+05:30",
+        "project": "checkpoint-timeline",
+        "label": "make git SHA actionable",
+        "note": "the reason this beats a notes line: bind note -> SHA + changed files; show prints git show/diff",
+        "files": [
+          "checkpoint.py"
+        ],
+        "git_sha": "b021938248003309574b67b4b003168cf8be4296",
+        "git_branch": "main"
+      },
+      {
+        "id": "checkpoint-timeline-0003-1790014953",
+        "seq": 3,
+        "ts": "2026-09-21T23:52:33+05:30",
+        "project": "checkpoint-timeline",
+        "label": "auto-infer project + auto-write timeline.json",
+        "note": "kill the manual build step; never stale",
+        "files": [
+          "checkpoint.py",
+          "timeline.html"
+        ],
+        "git_sha": "3865f45aa11c0de0ffee1234567890abcdef0011",
+        "git_branch": "main"
+      },
+      {
+        "id": "checkpoint-timeline-0004-1790014953",
+        "seq": 4,
+        "ts": "2026-09-21T23:52:33+05:30",
+        "project": "checkpoint-timeline",
+        "label": "monotonic seq ordering",
+        "note": "order by seq not client ts (clock-skew safe); single-writer boundary",
+        "files": []
+      },
+      {
+        "id": "checkpoint-timeline-0005-1790014953",
+        "seq": 5,
+        "ts": "2026-09-21T23:52:33+05:30",
+        "project": "checkpoint-timeline",
+        "label": "README + MIT + examples; ready to push",
+        "note": "",
+        "files": []
+      }
+    ]
+  }
+}

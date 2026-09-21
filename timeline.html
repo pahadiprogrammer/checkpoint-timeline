@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Checkpoint Timeline</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --muted: #8b93a7;
+    --text: #e6e9ef; --accent: #4a9eff; --accent-dim: #2a3a52; --dot: #4a9eff;
+    --chip: #232833;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    padding: 16px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .hint { color: var(--muted); font-size: 12px; }
+  select, input[type=file], button {
+    background: var(--chip); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font: inherit;
+  }
+  .layout { display: flex; min-height: calc(100vh - 58px); }
+  .main { flex: 1; padding: 24px 20px; overflow-x: auto; }
+  .detail {
+    width: 380px; border-left: 1px solid var(--line); background: var(--panel);
+    padding: 20px; overflow-y: auto;
+  }
+  .detail.empty { color: var(--muted); }
+  .empty-state { color: var(--muted); padding: 40px 0; max-width: 560px; }
+  .empty-state code { background: var(--chip); padding: 2px 6px; border-radius: 4px; }
+
+  /* timeline strip */
+  .track { position: relative; padding-left: 8px; }
+  .track::before {
+    content: ""; position: absolute; left: 15px; top: 6px; bottom: 6px;
+    width: 2px; background: var(--line);
+  }
+  .cp {
+    position: relative; padding: 10px 10px 10px 40px; margin: 2px 0;
+    border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+  }
+  .cp:hover { background: #1c212b; }
+  .cp.sel { background: var(--accent-dim); border-color: var(--accent); }
+  .cp .dot {
+    position: absolute; left: 9px; top: 14px; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--dot); border: 3px solid var(--bg);
+  }
+  .cp .lbl { font-weight: 600; }
+  .cp .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .cp .sha { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
+
+  .detail h2 { font-size: 15px; margin: 0 0 4px; }
+  .detail .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-top: 16px; }
+  .detail .v { margin-top: 2px; word-break: break-word; }
+  .detail code, .cmd {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    background: var(--chip); border-radius: 4px;
+  }
+  .cmd { display: block; padding: 8px 10px; margin-top: 6px; border: 1px solid var(--line); white-space: pre-wrap; }
+  .files { list-style: none; padding: 0; margin: 6px 0 0; }
+  .files li { padding: 3px 0; font-family: ui-monospace, Menlo, monospace; font-size: 12px; border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⎇ Checkpoint Timeline</h1>
+  <label>project
+    <select id="projectSel"></select>
+  </label>
+  <span class="hint" id="loadHint"></span>
+  <label class="hint" style="margin-left:auto">
+    load timeline.json
+    <input type="file" id="fileInput" accept="application/json,.json" />
+  </label>
+</header>
+
+<div class="layout">
+  <div class="main">
+    <div id="track" class="track"></div>
+    <div id="emptyState" class="empty-state" style="display:none">
+      <p><strong>No timeline loaded.</strong></p>
+      <p>Create checkpoints from the CLI, then open the generated <code>timeline.json</code>:</p>
+      <p><code>checkpoint "wired the bake step"</code></p>
+      <p>The tool writes <code>~/.checkpoint/timeline.json</code>. If this page can't auto-load it
+      (opening via <code>file://</code> blocks reading sibling files), use <em>load timeline.json</em> above.</p>
+    </div>
+  </div>
+  <div id="detail" class="detail empty">Select a checkpoint to see what was built.</div>
+</div>
+
+<script>
+"use strict";
+let DATA = null;
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+  { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
+
+function render() {
+  const sel = document.getElementById("projectSel");
+  const track = document.getElementById("track");
+  const empty = document.getElementById("emptyState");
+  track.innerHTML = "";
+  if (!DATA || !DATA.projects || !Object.keys(DATA.projects).length) {
+    empty.style.display = "block";
+    sel.innerHTML = "";
+    return;
+  }
+  empty.style.display = "none";
+
+  const projects = Object.keys(DATA.projects).sort();
+  if (![...sel.options].some(o => projects.includes(o.value))) {
+    sel.innerHTML = projects.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
+  }
+  const project = sel.value || projects[0];
+  sel.value = project;
+
+  const items = (DATA.projects[project] || []).slice().sort((a,b)=>(a.seq||0)-(b.seq||0));
+  // newest first for reading
+  items.reverse();
+  for (const c of items) {
+    const div = document.createElement("div");
+    div.className = "cp";
+    div.dataset.id = c.id;
+    const sha = c.git_sha ? `<span class="sha">${esc(c.git_sha.slice(0,8))}</span> · ` : "";
+    div.innerHTML =
+      `<span class="dot"></span>` +
+      `<div class="lbl">#${c.seq||0} · ${esc(c.label)}</div>` +
+      `<div class="meta">${sha}${esc(fmtTime(c.ts))} · ${(c.files||[]).length} file(s)</div>`;
+    div.onclick = () => selectCp(project, c.id, div);
+    track.appendChild(div);
+  }
+}
+
+function selectCp(project, id, el) {
+  document.querySelectorAll(".cp.sel").forEach(n => n.classList.remove("sel"));
+  if (el) el.classList.add("sel");
+  const c = (DATA.projects[project] || []).find(x => x.id === id);
+  const d = document.getElementById("detail");
+  if (!c) { d.className = "detail empty"; d.textContent = "not found"; return; }
+  d.className = "detail";
+  let html = `<h2>#${c.seq||0} · ${esc(c.label)}</h2>`;
+  html += `<div class="meta" style="color:var(--muted)">${esc(fmtTime(c.ts))}</div>`;
+  if (c.note) html += `<div class="k">note</div><div class="v">${esc(c.note)}</div>`;
+  if (c.git_sha) {
+    html += `<div class="k">git</div><div class="v"><code>${esc(c.git_sha)}</code>`;
+    if (c.git_branch) html += ` <span style="color:var(--muted)">(${esc(c.git_branch)})</span>`;
+    html += `</div>`;
+    html += `<div class="k">inspect</div>`;
+    html += `<code class="cmd">git show ${esc(c.git_sha)}</code>`;
+    html += `<code class="cmd">git diff ${esc(c.git_sha)}</code>`;
+  }
+  if (c.files && c.files.length) {
+    html += `<div class="k">files (${c.files.length})</div><ul class="files">`;
+    html += c.files.map(f => `<li>${esc(f)}</li>`).join("");
+    html += `</ul>`;
+  }
+  html += `<div class="k">id</div><div class="v"><code>${esc(c.id)}</code></div>`;
+  d.innerHTML = html;
+}
+
+function load(data) { DATA = data; render(); }
+
+document.getElementById("projectSel").onchange = () => { render(); document.getElementById("detail").className="detail empty"; document.getElementById("detail").textContent="Select a checkpoint to see what was built."; };
+
+document.getElementById("fileInput").onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => { try { load(JSON.parse(r.result)); document.getElementById("loadHint").textContent = "loaded " + file.name; } catch (err) { alert("Invalid JSON: " + err.message); } };
+  r.readAsText(file);
+};
+
+// Best-effort auto-load of a sibling timeline.json (works when served over http://).
+fetch("timeline.json").then(r => r.ok ? r.json() : Promise.reject()).then(load).catch(() => {
+  document.getElementById("loadHint").textContent = "open timeline.json manually →";
+});
+</script>
+</body>
+</html>

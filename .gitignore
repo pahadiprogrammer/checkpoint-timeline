@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local scratch / test stores
+/tmp/
+*.tmp
+timeline.json.tmp
+
+# OS
+.DS_Store
+
+# Personal checkpoint store should NOT live in the repo (use $CHECKPOINT_HOME).
+# The repo ships only examples/timeline.json as a demo.
+.checkpoint/
