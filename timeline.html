@@ -21,10 +21,11 @@
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   header .hint { color: var(--muted); font-size: 12px; }
-  select, input[type=file], button {
+  select, input[type=file], input[type=search], button {
     background: var(--chip); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 6px 10px; font: inherit;
   }
+  input[type=search] { min-width: 180px; }
   .layout { display: flex; min-height: calc(100vh - 58px); }
   .main { flex: 1; padding: 24px 20px; overflow-x: auto; }
   .detail {
@@ -46,6 +47,8 @@
     border-radius: 8px; cursor: pointer; border: 1px solid transparent;
   }
   .cp:hover { background: #1c212b; }
+  .cp:focus { outline: none; }
+  .cp:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .cp.sel { background: var(--accent-dim); border-color: var(--accent); }
   .cp .dot {
     position: absolute; left: 9px; top: 14px; width: 14px; height: 14px;
@@ -63,6 +66,13 @@
     background: var(--chip); border-radius: 4px;
   }
   .cmd { display: block; padding: 8px 10px; margin-top: 6px; border: 1px solid var(--line); white-space: pre-wrap; }
+  .cmd-row { display: flex; gap: 6px; margin-top: 6px; align-items: stretch; }
+  .cmd-row .cmd { margin-top: 0; flex: 1; min-width: 0; }
+  .copy {
+    cursor: pointer; padding: 4px 8px; font-size: 11px; white-space: nowrap; align-self: stretch;
+  }
+  .copy:hover { border-color: var(--accent); }
+  .copy:disabled { opacity: .7; cursor: default; }
   .files { list-style: none; padding: 0; margin: 6px 0 0; }
   .files li { padding: 3px 0; font-family: ui-monospace, Menlo, monospace; font-size: 12px; border-bottom: 1px solid var(--line); }
 </style>
@@ -73,6 +83,10 @@
   <label>project
     <select id="projectSel"></select>
   </label>
+  <label>filter
+    <input type="search" id="filterInput" placeholder="label or note…" aria-label="filter checkpoints" />
+  </label>
+  <span class="hint" id="filterCount"></span>
   <span class="hint" id="loadHint"></span>
   <label class="hint" style="margin-left:auto">
     load timeline.json
@@ -97,6 +111,8 @@
 <script>
 "use strict";
 let DATA = null;
+let curSel = null;   // { project, id } of the selected checkpoint
+let hashLock = false; // guards our own location.hash writes from re-triggering applyHash
 
 function fmtTime(iso) {
   if (!iso) return "";
@@ -104,17 +120,53 @@ function fmtTime(iso) {
   if (isNaN(d)) return iso;
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
+function relTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  let s = (Date.now() - d.getTime()) / 1000;
+  const suf = s < 0 ? "from now" : "ago";
+  s = Math.abs(s);
+  const steps = [["s",60],["m",60],["h",24],["d",7],["w",4.348],["mo",12],["y",Infinity]];
+  let unit = "s", val = s;
+  for (let i = 0; i < steps.length; i++) { if (val < steps[i][1]) { unit = steps[i][0]; break; } val /= steps[i][1]; }
+  val = Math.floor(val);
+  if (unit === "s" && val < 10) return "just now";
+  return val + unit + " " + suf;
+}
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
   { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
+
+// Copy to clipboard with a graceful fallback for non-secure / file:// contexts.
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t);
+  return new Promise((res, rej) => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok ? res() : rej(new Error("execCommand failed"));
+    } catch (e) { rej(e); }
+  });
+}
+function flash(btn, msg) {
+  const orig = btn.textContent;
+  btn.textContent = msg; btn.disabled = true;
+  setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
+}
 
 function render() {
   const sel = document.getElementById("projectSel");
   const track = document.getElementById("track");
   const empty = document.getElementById("emptyState");
+  const countEl = document.getElementById("filterCount");
   track.innerHTML = "";
   if (!DATA || !DATA.projects || !Object.keys(DATA.projects).length) {
     empty.style.display = "block";
     sel.innerHTML = "";
+    countEl.textContent = "";
     return;
   }
   empty.style.display = "none";
@@ -126,40 +178,65 @@ function render() {
   const project = sel.value || projects[0];
   sel.value = project;
 
-  const items = (DATA.projects[project] || []).slice().sort((a,b)=>(a.seq||0)-(b.seq||0));
+  const all = (DATA.projects[project] || []).slice().sort((a,b)=>(a.seq||0)-(b.seq||0));
   // newest first for reading
-  items.reverse();
+  all.reverse();
+  const q = document.getElementById("filterInput").value.trim().toLowerCase();
+  const items = q
+    ? all.filter(c => ((c.label||"") + " " + (c.note||"")).toLowerCase().includes(q))
+    : all;
+  countEl.textContent = q ? `${items.length} of ${all.length}` : `${all.length} checkpoint(s)`;
+
   for (const c of items) {
     const div = document.createElement("div");
     div.className = "cp";
     div.dataset.id = c.id;
+    div.dataset.seq = c.seq || 0;
+    div.setAttribute("role", "button");
+    div.setAttribute("tabindex", "0");
+    div.setAttribute("aria-selected", curSel && curSel.project === project && curSel.id === c.id ? "true" : "false");
+    if (curSel && curSel.project === project && curSel.id === c.id) div.classList.add("sel");
     const sha = c.git_sha ? `<span class="sha">${esc(c.git_sha.slice(0,8))}</span> · ` : "";
+    const when = relTime(c.ts) || fmtTime(c.ts);
     div.innerHTML =
       `<span class="dot"></span>` +
       `<div class="lbl">#${c.seq||0} · ${esc(c.label)}</div>` +
-      `<div class="meta">${sha}${esc(fmtTime(c.ts))} · ${(c.files||[]).length} file(s)</div>`;
+      `<div class="meta">${sha}<span title="${esc(fmtTime(c.ts))}">${esc(when)}</span> · ${(c.files||[]).length} file(s)</div>`;
     div.onclick = () => selectCp(project, c.id, div);
     track.appendChild(div);
   }
 }
 
-function selectCp(project, id, el) {
-  document.querySelectorAll(".cp.sel").forEach(n => n.classList.remove("sel"));
-  if (el) el.classList.add("sel");
+function cmdRow(cmd) {
+  return `<div class="cmd-row"><code class="cmd">${esc(cmd)}</code>` +
+         `<button class="copy" type="button" data-copy="${esc(cmd)}" aria-label="copy command">copy</button></div>`;
+}
+
+function clearDetail() {
+  const d = document.getElementById("detail");
+  d.className = "detail empty";
+  d.textContent = "Select a checkpoint to see what was built.";
+}
+
+function selectCp(project, id, el, updateHash) {
+  if (updateHash === undefined) updateHash = true;
+  document.querySelectorAll(".cp.sel").forEach(n => { n.classList.remove("sel"); n.setAttribute("aria-selected", "false"); });
+  if (el) { el.classList.add("sel"); el.setAttribute("aria-selected", "true"); }
   const c = (DATA.projects[project] || []).find(x => x.id === id);
   const d = document.getElementById("detail");
   if (!c) { d.className = "detail empty"; d.textContent = "not found"; return; }
+  curSel = { project, id };
   d.className = "detail";
   let html = `<h2>#${c.seq||0} · ${esc(c.label)}</h2>`;
-  html += `<div class="meta" style="color:var(--muted)">${esc(fmtTime(c.ts))}</div>`;
+  html += `<div class="meta" style="color:var(--muted)" title="${esc(fmtTime(c.ts))}">${esc(relTime(c.ts) || fmtTime(c.ts))}</div>`;
   if (c.note) html += `<div class="k">note</div><div class="v">${esc(c.note)}</div>`;
   if (c.git_sha) {
     html += `<div class="k">git</div><div class="v"><code>${esc(c.git_sha)}</code>`;
     if (c.git_branch) html += ` <span style="color:var(--muted)">(${esc(c.git_branch)})</span>`;
     html += `</div>`;
     html += `<div class="k">inspect</div>`;
-    html += `<code class="cmd">git show ${esc(c.git_sha)}</code>`;
-    html += `<code class="cmd">git diff ${esc(c.git_sha)}</code>`;
+    html += cmdRow(`git show ${c.git_sha}`);
+    html += cmdRow(`git diff ${c.git_sha}`);
   }
   if (c.files && c.files.length) {
     html += `<div class="k">files (${c.files.length})</div><ul class="files">`;
@@ -168,11 +245,73 @@ function selectCp(project, id, el) {
   }
   html += `<div class="k">id</div><div class="v"><code>${esc(c.id)}</code></div>`;
   d.innerHTML = html;
+
+  if (updateHash) {
+    const h = "#" + encodeURIComponent(project) + "/" + (c.seq || 0);
+    if (location.hash !== h) { hashLock = true; location.hash = h; }
+  }
 }
 
-function load(data) { DATA = data; render(); }
+// Select the project + checkpoint encoded in location.hash (#<project>/<seq>).
+function applyHash() {
+  if (!DATA || !DATA.projects) return;
+  const raw = location.hash.slice(1);
+  if (!raw) return;
+  const i = raw.lastIndexOf("/");
+  if (i < 0) return;
+  const project = decodeURIComponent(raw.slice(0, i));
+  const seq = decodeURIComponent(raw.slice(i + 1));
+  if (!DATA.projects[project]) return;
+  const sel = document.getElementById("projectSel");
+  if (sel.value !== project) { sel.value = project; render(); }
+  const c = (DATA.projects[project] || []).find(x => String(x.seq) === seq);
+  if (!c) return;
+  const el = [...document.querySelectorAll(".cp")].find(n => n.dataset.id === c.id);
+  selectCp(project, c.id, el, false);
+  if (el) el.focus();
+}
 
-document.getElementById("projectSel").onchange = () => { render(); document.getElementById("detail").className="detail empty"; document.getElementById("detail").textContent="Select a checkpoint to see what was built."; };
+function load(data) { DATA = data; render(); applyHash(); }
+
+document.getElementById("projectSel").onchange = () => {
+  curSel = null;
+  render();
+  clearDetail();
+  if (location.hash) { hashLock = true; location.hash = ""; }
+};
+
+document.getElementById("filterInput").oninput = () => render();
+
+// Keyboard nav over the checkpoint list (bubbles from focusable .cp items).
+document.getElementById("track").addEventListener("keydown", (e) => {
+  const cps = [...document.querySelectorAll(".cp")];
+  if (!cps.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    let idx = cps.findIndex(n => n.classList.contains("sel"));
+    if (idx < 0) idx = e.key === "ArrowDown" ? -1 : cps.length;
+    let ni = e.key === "ArrowDown" ? idx + 1 : idx - 1;
+    ni = Math.max(0, Math.min(cps.length - 1, ni));
+    cps[ni].focus();
+    cps[ni].click();
+  } else if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    const active = document.activeElement;
+    (active && active.classList.contains("cp") ? active : cps[0]).click();
+  }
+});
+
+// Copy buttons in the detail panel (event delegation).
+document.getElementById("detail").addEventListener("click", (e) => {
+  const btn = e.target.closest(".copy");
+  if (!btn) return;
+  copyText(btn.dataset.copy).then(() => flash(btn, "copied")).catch(() => flash(btn, "failed"));
+});
+
+window.addEventListener("hashchange", () => {
+  if (hashLock) { hashLock = false; return; }
+  applyHash();
+});
 
 document.getElementById("fileInput").onchange = (e) => {
   const file = e.target.files[0];
