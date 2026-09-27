@@ -62,8 +62,8 @@ checkpoint show 2      # prints the note + ready-to-run `git show <sha>`
 
 Checkpoints are stored in `$CHECKPOINT_HOME` (default `~/.checkpoint/`):
 ```
-~/.checkpoint/checkpoints/<project>.jsonl   # append-only source of truth
-~/.checkpoint/timeline.json                 # derived; rewritten on every add
+~/.checkpoint/checkpoints/<project>.jsonl   # append-only event log (source of truth)
+~/.checkpoint/timeline.json                 # derived; folded from the events on every change
 ```
 
 ## The timeline UI
@@ -79,10 +79,32 @@ per project — click a checkpoint to see what was built, the files, and the git
 | Command | What it does |
 |---|---|
 | `checkpoint "label"` | create a checkpoint (bare form = `add`) |
-| `checkpoint add "label" [-p proj] [-n note] [-f files...] [--no-git]` | full form |
-| `checkpoint list [-p proj]` | list checkpoints |
-| `checkpoint show <seq> [-p proj]` | detail + actionable `git show/diff` |
+| `checkpoint add "label" [-n note] [-c HEAD\|<sha>\|none] [-d YYYY-MM-DD] [-p proj] [-f files…] [--no-git]` | create; `-c none` adds it **unbound** (associate a commit later) |
+| `checkpoint edit <seq\|id> [-l label] [-n note]` | update text — **append-only amend**, original is kept |
+| `checkpoint link <seq\|id> [HEAD\|<sha>\|none]` | associate / re-associate to a commit (or `none` to unbind) |
+| `checkpoint at <seq\|id> <YYYY-MM-DD>` | set the **"about" day** the note logically belongs to |
+| `checkpoint rm <seq\|id>` | delete (**tombstone** — kept in the log, recoverable) |
+| `checkpoint list [-p proj]` | list checkpoints (`*` = edited, `(unbound)` = no commit) |
+| `checkpoint show <seq\|id> [-p proj]` | detail + actionable `git show/diff` |
 | `checkpoint build` | regenerate `timeline.json` (normally automatic) |
+
+## Editing, associating, deleting (append-only)
+The store is an **append-only event log** — nothing is mutated or reordered in place.
+`edit` / `link` / `at` / `rm` each append an event that supersedes the note; the CLI folds
+the log into the current state (and the derived `timeline.json`). So you get faithful
+history *and* the flexibility to fix things:
+
+```bash
+checkpoint "explored caching layer" -c none     # jot a note now, don't bind a commit yet
+checkpoint link 4 HEAD                           # ...associate it to a commit later
+checkpoint edit 4 -n "went with read-through; write-through was too chatty"   # refine the note
+checkpoint at 4 2026-09-25                        # this note is really about the 25th
+checkpoint rm 4                                   # remove it from the view (still in the log)
+```
+
+- **Record time is the immutable spine** (order never changes). Text, commit link, and the
+  "about" day are the mutable parts, changed via events.
+- The **timeline viewer is read-only** — all edits happen through the CLI.
 
 ## Scope (deliberately small)
 - View-only logbook — **no restore, no file-content storage** (doesn't reinvent git).
