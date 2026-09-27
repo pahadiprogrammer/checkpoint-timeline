@@ -109,6 +109,15 @@ journal at 2 2026-09-25          # this decision really belongs to the 25th
 - **Record time is the immutable spine** — order never changes. Text, status, the (optional) commit link, and the "about" day are the mutable parts, changed via events.
 - **Superseding never deletes** — the old decision stays, marked `superseded`, with the newer one’s number attached, so you can see how thinking evolved.
 
+## Agent skills (Claude Code)
+An AI assistant can drive the journal for you. Two skills live in [`skills/`](skills/):
+- **`journal`** — records a decision (with rationale) as it's made during a session.
+- **`reconcile`** — cleans up contradicting decisions (latest-wins), on demand.
+
+Install them into Claude Code (personal or project scope) — see [`skills/README.md`](skills/README.md).
+They use the portable [Agent Skills](https://agentskills.io) format, so they also work in other
+Agent-Skills-compatible tools. The `journal` CLI itself works in *any* shell-capable agent.
+
 ## Scope (deliberately small)
 - A decision **log**, not version control — no restore, no file-content storage.
 - Decisions are **not tied to commits** (association is optional).
