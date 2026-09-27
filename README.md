@@ -1,4 +1,4 @@
-# ⎇ checkpoint-timeline
+# ⎇ checkpoint-timeline · aka **Journal**
 
 **`journal`** — a lightweight, **manual decision log** for your projects (ADR-style), plus a
 zero-dependency timeline viewer to browse your decisions over time.
