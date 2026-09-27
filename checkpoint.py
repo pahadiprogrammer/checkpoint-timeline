@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""checkpoint — a lightweight, git-like *manual* checkpoint logbook.
+"""journal — a lightweight, *manual* decision log (ADR-style).
 
-A checkpoint binds a short note ("what I built / decided") to a moment and,
-optionally, to a git commit. It is NOT version control — it stores no file
-contents and cannot restore.
+A journal entry records a decision ("what I decided and why"). Entries are NOT tied
+to commits (association is optional) and this is NOT version control — it stores no
+file contents and cannot restore.
 
 Model (append-only event log):
 - Each line in <project>.jsonl is an EVENT, never mutated in place:
@@ -251,7 +251,7 @@ def make_id(project: str, seq: int) -> str:
 def _resolve_or_die(project: str, ref: str) -> dict | None:
     n = resolve_ref(project, ref)
     if not n:
-        print(f"no checkpoint '{ref}' in project '{project}'", file=sys.stderr)
+        print(f"no decision '{ref}' in project '{project}'", file=sys.stderr)
     return n
 
 
@@ -369,7 +369,7 @@ def cmd_supersede(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     projects = [slugify(args.project)] if args.project else all_projects()
     if not projects:
-        print("no decisions yet — record one with:  checkpoint \"the decision\"")
+        print("no decisions yet — record one with:  journal \"the decision\"")
         return 0
     for project in projects:
         notes = current_notes(project)
@@ -395,7 +395,7 @@ def cmd_show(args: argparse.Namespace) -> int:
     project = slugify(args.project) if args.project else infer_project()
     n = resolve_ref(project, args.ref)
     if not n:
-        print(f"no checkpoint '{args.ref}' in project '{project}'", file=sys.stderr)
+        print(f"no decision '{args.ref}' in project '{project}'", file=sys.stderr)
         return 1
     print(f"#{n.get('seq')}  {n.get('label')}{'  (edited)' if n.get('edited') else ''}")
     print(f"  id      {n.get('id')}")
@@ -414,7 +414,7 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(f"  inspect git show {n['git_sha']}")
         print(f"          git diff {n['git_sha']}")
     else:
-        print("  git     (unbound — link with:  checkpoint link {} HEAD)".format(n.get("seq")))
+        print("  git     (unbound — link with:  journal link {} HEAD)".format(n.get("seq")))
     if n.get("files"):
         print("  files")
         for f in n["files"]:
@@ -430,8 +430,8 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="checkpoint",
-        description="Lightweight manual git-like checkpoint logbook (append-only; view-only UI).",
+        prog="journal",
+        description="Lightweight manual decision log / ADR journal (append-only; view-only UI).",
     )
     sub = p.add_subparsers(dest="cmd")
 
@@ -446,27 +446,27 @@ def build_parser() -> argparse.ArgumentParser:
     a.set_defaults(func=cmd_add)
 
     e = sub.add_parser("edit", help="update a note's text (append-only amend)")
-    e.add_argument("ref", help="checkpoint seq number or id")
+    e.add_argument("ref", help="decision seq number or id")
     e.add_argument("--label", "-l", help="new label")
     e.add_argument("--note", "-n", help="new note body")
     e.add_argument("--project", "-p", help="project slug (default: inferred)")
     e.set_defaults(func=cmd_edit)
 
     k = sub.add_parser("link", help="associate/re-associate a note to a commit (or unbind)")
-    k.add_argument("ref", help="checkpoint seq number or id")
+    k.add_argument("ref", help="decision seq number or id")
     k.add_argument("commit", nargs="?", default="HEAD",
                    help="HEAD (default), a sha/ref, or 'none' to unbind")
     k.add_argument("--project", "-p", help="project slug (default: inferred)")
     k.set_defaults(func=cmd_link)
 
     t = sub.add_parser("at", help="set the 'about' day a note belongs to")
-    t.add_argument("ref", help="checkpoint seq number or id")
+    t.add_argument("ref", help="decision seq number or id")
     t.add_argument("date", help="YYYY-MM-DD")
     t.add_argument("--project", "-p", help="project slug (default: inferred)")
     t.set_defaults(func=cmd_at)
 
     r = sub.add_parser("rm", help="delete a note (tombstone; kept in the log)")
-    r.add_argument("ref", help="checkpoint seq number or id")
+    r.add_argument("ref", help="decision seq number or id")
     r.add_argument("--project", "-p", help="project slug (default: inferred)")
     r.set_defaults(func=cmd_rm)
 
@@ -476,12 +476,12 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--project", "-p", help="project slug (default: inferred)")
     x.set_defaults(func=cmd_supersede)
 
-    l = sub.add_parser("list", help="list checkpoints")
+    l = sub.add_parser("list", help="list decisions")
     l.add_argument("--project", "-p", help="project slug (default: all)")
     l.set_defaults(func=cmd_list)
 
-    s = sub.add_parser("show", help="show one checkpoint (by seq or id)")
-    s.add_argument("ref", help="checkpoint seq number or id")
+    s = sub.add_parser("show", help="show one decision (by seq or id)")
+    s.add_argument("ref", help="decision seq number or id")
     s.add_argument("--project", "-p", help="project slug (default: inferred)")
     s.set_defaults(func=cmd_show)
 
@@ -496,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     known = {"add", "edit", "link", "at", "rm", "supersede", "list", "show", "build", "-h", "--help"}
     if argv and argv[0] not in known:
-        argv = ["add", *argv]  # bare `checkpoint "label"` → add
+        argv = ["add", *argv]  # bare `journal "label"` → add
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
         parser.print_help()
