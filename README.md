@@ -70,7 +70,9 @@ Decisions are stored in `$CHECKPOINT_HOME` (default `~/.checkpoint/`):
 
 ## The timeline UI
 Open `timeline.html`. It reads `timeline.json` — a clickable strip of decisions per project;
-click one to see its rationale, status (active / superseded), and any related commit.
+click one to see its rationale, status, and any related commit. **Superseded** decisions are
+dimmed and badged with the decision that replaced them (`superseded by #N`); active ones show an
+`active` badge.
 
 - Served over `http://` (e.g. `python3 -m http.server` next to a copy of `timeline.json`)
   it auto-loads.

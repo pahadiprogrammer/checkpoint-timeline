@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Checkpoint Timeline</title>
+<title>Journal</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --muted: #8b93a7;
@@ -50,6 +50,10 @@
   .cp:focus { outline: none; }
   .cp:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .cp.sel { background: var(--accent-dim); border-color: var(--accent); }
+  .cp.superseded .lbl { text-decoration: line-through; color: var(--muted); }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px;
+           background: var(--chip); color: var(--muted); border: 1px solid var(--line); }
+  .badge.superseded { color: #e0a458; border-color: #5a4322; }
   .cp .dot {
     position: absolute; left: 9px; top: 14px; width: 14px; height: 14px;
     border-radius: 50%; background: var(--dot); border: 3px solid var(--bg);
@@ -79,7 +83,7 @@
 </head>
 <body>
 <header>
-  <h1>⎇ Checkpoint Timeline</h1>
+  <h1>⎇ Journal</h1>
   <label>project
     <select id="projectSel"></select>
   </label>
@@ -99,13 +103,13 @@
     <div id="track" class="track"></div>
     <div id="emptyState" class="empty-state" style="display:none">
       <p><strong>No timeline loaded.</strong></p>
-      <p>Create checkpoints from the CLI, then open the generated <code>timeline.json</code>:</p>
-      <p><code>checkpoint "wired the bake step"</code></p>
+      <p>Record decisions with the CLI, then open the generated <code>timeline.json</code>:</p>
+      <p><code>journal "chose Postgres over Dynamo" -n "need cross-row transactions"</code></p>
       <p>The tool writes <code>~/.checkpoint/timeline.json</code>. If this page can't auto-load it
       (opening via <code>file://</code> blocks reading sibling files), use <em>load timeline.json</em> above.</p>
     </div>
   </div>
-  <div id="detail" class="detail empty">Select a checkpoint to see what was built.</div>
+  <div id="detail" class="detail empty">Select a decision to see its rationale.</div>
 </div>
 
 <script>
@@ -196,12 +200,18 @@ function render() {
     div.setAttribute("tabindex", "0");
     div.setAttribute("aria-selected", curSel && curSel.project === project && curSel.id === c.id ? "true" : "false");
     if (curSel && curSel.project === project && curSel.id === c.id) div.classList.add("sel");
-    const sha = c.git_sha ? `<span class="sha">${esc(c.git_sha.slice(0,8))}</span> · ` : "";
     const when = relTime(c.ts) || fmtTime(c.ts);
+    const superseded = c.status === "superseded";
+    if (superseded) div.classList.add("superseded");
+    const badge = superseded ? ` <span class="badge superseded">superseded by #${esc(c.superseded_by)}</span>` : "";
+    const meta = [];
+    if (c.git_sha) meta.push(`<span class="sha">${esc(c.git_sha.slice(0,8))}</span>`);
+    meta.push(`<span title="${esc(fmtTime(c.ts))}">${esc(when)}</span>`);
+    if ((c.files||[]).length) meta.push(`${(c.files||[]).length} file(s)`);
     div.innerHTML =
       `<span class="dot"></span>` +
-      `<div class="lbl">#${c.seq||0} · ${esc(c.label)}</div>` +
-      `<div class="meta">${sha}<span title="${esc(fmtTime(c.ts))}">${esc(when)}</span> · ${(c.files||[]).length} file(s)</div>`;
+      `<div class="lbl">#${c.seq||0} · ${esc(c.label)}${badge}</div>` +
+      `<div class="meta">${meta.join(" · ")}</div>`;
     div.onclick = () => selectCp(project, c.id, div);
     track.appendChild(div);
   }
@@ -215,7 +225,7 @@ function cmdRow(cmd) {
 function clearDetail() {
   const d = document.getElementById("detail");
   d.className = "detail empty";
-  d.textContent = "Select a checkpoint to see what was built.";
+  d.textContent = "Select a decision to see its rationale.";
 }
 
 function selectCp(project, id, el, updateHash) {
@@ -229,6 +239,9 @@ function selectCp(project, id, el, updateHash) {
   d.className = "detail";
   let html = `<h2>#${c.seq||0} · ${esc(c.label)}</h2>`;
   html += `<div class="meta" style="color:var(--muted)" title="${esc(fmtTime(c.ts))}">${esc(relTime(c.ts) || fmtTime(c.ts))}</div>`;
+  html += `<div class="k">status</div><div class="v">` + (c.status === "superseded"
+    ? `<span class="badge superseded">superseded by #${esc(c.superseded_by)}</span>`
+    : `<span class="badge">active</span>`) + `</div>`;
   if (c.note) html += `<div class="k">note</div><div class="v">${esc(c.note)}</div>`;
   if (c.git_sha) {
     html += `<div class="k">git</div><div class="v"><code>${esc(c.git_sha)}</code>`;
