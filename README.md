@@ -1,4 +1,4 @@
-# ⎇ checkpoint-timeline · aka **Journal**
+# ⎇ checkpoint-timeline (aka Journal)
 
 **`journal`** — a lightweight, **manual decision log** for your projects (ADR-style), plus a
 zero-dependency timeline viewer to browse your decisions over time.
@@ -9,11 +9,7 @@ store no file contents, can't restore, and **aren't tied to commits**. It captur
 thing the code and `git log` never will — the **reasoning** behind a decision — so you (or a
 reviewer, or a future you) can understand it and change direction later.
 
-## Why not commit messages / a markdown file?
-- **Commit messages** describe *what changed in a commit* — code-level, and they rarely capture the *why*, the rejected alternatives, or the consequences.
-- **The code / `git`** is always there to analyze, but it tells you *what is*, never *why it was chosen*.
-- **A plain notes file** can't track a decision's lifecycle — being **superseded** or replaced over time.
-- **`journal`** records decisions (rationale, alternatives, consequences), keeps them **append-only**, lets a later decision **supersede** an earlier one, and renders them as a clickable timeline per project.
+**Jump to:** [Install](#install) | [Quickstart](#quickstart) | [CLI commands](#commands) | [Agent skills](#agent-skills-claude-code) | [Timeline UI](#the-timeline-ui) | [FAQ](#faq)
 
 ## Install
 
@@ -127,6 +123,14 @@ Agent-Skills-compatible tools. The `journal` CLI itself works in *any* shell-cap
 - **Single machine / single writer**.
 - **Manual** entries — write one when you decide something; no daemon, no auto-capture hook.
 - *Planned, not built:* an LLM `reconcile` pass to auto-detect contradicting decisions and apply "latest wins" (append `supersede` events for review). Today, supersession is manual.
+
+## FAQ
+
+### Why not commit messages / a markdown file?
+- **Commit messages** describe *what changed in a commit* — code-level, and they rarely capture the *why*, the rejected alternatives, or the consequences.
+- **The code / `git`** is always there to analyze, but it tells you *what is*, never *why it was chosen*.
+- **A plain notes file** can't track a decision's lifecycle — being **superseded** or replaced over time.
+- **`journal`** records decisions (rationale, alternatives, consequences), keeps them **append-only**, lets a later decision **supersede** an earlier one, and renders them as a clickable timeline per project.
 
 ## License
 MIT — see [LICENSE](LICENSE).
