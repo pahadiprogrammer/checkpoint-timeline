@@ -17,13 +17,35 @@ after a decision — not only when code lands.
 - **checkpoint** binds the note to the git state and renders it as a clickable timeline.
 
 ## Install
-No install needed to view. The CLI is a single Python file (stdlib only, Python 3.8+):
+
+The CLI is a single Python file — **stdlib only, Python 3.8+**, no `pip`. Viewing the
+timeline needs nothing but a browser.
 
 ```bash
-git clone <this-repo> && cd checkpoint-timeline
-# optional: put it on your PATH
-alias checkpoint='python3 /full/path/to/checkpoint.py'
+# 1. clone
+git clone https://github.com/pahadiprogrammer/checkpoint-timeline.git
+cd checkpoint-timeline
+
+# 2. make the CLI executable
+chmod +x checkpoint.py
+
+# 3. put `checkpoint` on your PATH — pick ONE:
+
+#  (a) symlink into ~/.local/bin  (recommended)
+mkdir -p ~/.local/bin
+ln -sf "$PWD/checkpoint.py" ~/.local/bin/checkpoint
+#  ensure ~/.local/bin is on your PATH (once), e.g. for zsh:
+#  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+#  (b) OR add a permanent alias instead of the symlink:
+#  echo "alias checkpoint='python3 $PWD/checkpoint.py'" >> ~/.zshrc && source ~/.zshrc
+
+# 4. verify
+checkpoint --help
 ```
+
+> To only *view* an existing timeline, no install is needed — just open `timeline.html`
+> (see [The timeline UI](#the-timeline-ui) below).
 
 ## Quickstart
 ```bash
@@ -62,7 +84,7 @@ per project — click a checkpoint to see what was built, the files, and the git
 | `checkpoint show <seq> [-p proj]` | detail + actionable `git show/diff` |
 | `checkpoint build` | regenerate `timeline.json` (normally automatic) |
 
-## Scope (v1, deliberately small)
+## Scope (deliberately small)
 - View-only logbook — **no restore, no file-content storage** (doesn't reinvent git).
 - Local, **no network / no egress**.
 - **Single machine / single writer** — syncing the store across machines is out of scope.
