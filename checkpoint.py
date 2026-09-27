@@ -168,6 +168,9 @@ def fold_events(events: list[dict]) -> dict[str, dict]:
                 "git_sha": e.get("git_sha"),
                 "git_branch": e.get("git_branch", ""),
                 "about_date": e.get("about_date"),
+                "status": "active",
+                "superseded_by": None,
+                "superseded_by_id": None,
                 "edited": False,
                 "deleted": False,
             }
@@ -187,6 +190,11 @@ def fold_events(events: list[dict]) -> dict[str, dict]:
             n["git_branch"] = e.get("git_branch", "")
         elif et == "about":
             n["about_date"] = e.get("about_date")
+        elif et == "supersede":
+            # kept, NOT deleted — status flips and the newer decision is attached
+            n["status"] = "superseded"
+            n["superseded_by"] = e.get("by_seq")
+            n["superseded_by_id"] = e.get("by")
         elif et == "tombstone":
             n["deleted"] = True
     return notes
@@ -251,7 +259,6 @@ def _resolve_or_die(project: str, ref: str) -> dict | None:
 
 def cmd_add(args: argparse.Namespace) -> int:
     project = slugify(args.project) if args.project else infer_project()
-    use_git = not args.no_git
     seq = next_seq(project)
     event = {
         "type": "add",
@@ -261,21 +268,21 @@ def cmd_add(args: argparse.Namespace) -> int:
         "project": project,
         "label": args.label,
         "note": args.note or "",
-        "files": list(args.files) if args.files else (git_changed_files() if use_git else []),
+        "files": list(args.files) if args.files else [],
         "about_date": args.date,
     }
-    if use_git:
+    # Commit association is OPT-IN. A decision record is NOT tied to a commit — it can be
+    # written long after the fact and a project has many commits unrelated to any one decision.
+    if args.commit and args.commit != "none":
         sha, branch = resolve_commit(args.commit)
         if sha:
             event["git_sha"] = sha
             event["git_branch"] = branch
     append_event(project, event)
     rebuild_timeline()
-    print(f"✓ checkpoint {event['id']}  [{project} #{seq}]  {event['label']}")
+    print(f"✓ #{seq}  [{project}]  {event['label']}")
     if event.get("git_sha"):
-        print(f"  git {event['git_sha'][:10]} ({event.get('git_branch','')})  {len(event['files'])} file(s)")
-    else:
-        print("  (unbound — associate later with:  checkpoint link {} HEAD)".format(seq))
+        print(f"  related commit {event['git_sha'][:10]} ({event.get('git_branch','')})")
     return 0
 
 
@@ -341,10 +348,28 @@ def cmd_rm(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_supersede(args: argparse.Namespace) -> int:
+    project = slugify(args.project) if args.project else infer_project()
+    old = _resolve_or_die(project, args.ref)
+    if not old:
+        return 1
+    new = _resolve_or_die(project, args.by)
+    if not new:
+        return 1
+    if old["id"] == new["id"]:
+        print("a decision cannot supersede itself", file=sys.stderr)
+        return 2
+    append_event(project, {"type": "supersede", "id": old["id"], "record_ts": now_iso(),
+                           "by": new["id"], "by_seq": new["seq"]})
+    rebuild_timeline()
+    print(f"✓ #{old['seq']} marked superseded by #{new['seq']} (kept, not deleted)")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     projects = [slugify(args.project)] if args.project else all_projects()
     if not projects:
-        print("no checkpoints yet — create one with:  checkpoint \"what I did\"")
+        print("no decisions yet — record one with:  checkpoint \"the decision\"")
         return 0
     for project in projects:
         notes = current_notes(project)
@@ -352,10 +377,17 @@ def cmd_list(args: argparse.Namespace) -> int:
             continue
         print(f"\n{project}")
         for c in notes:
-            sha = f" {c['git_sha'][:8]}" if c.get("git_sha") else " (unbound)"
-            ed = " *" if c.get("edited") else ""
-            day = f" @{c['about_date']}" if c.get("about_date") else ""
-            print(f"  #{c.get('seq',0):<3} {c.get('ts','')[:19]}{sha}{day}  {c.get('label','')}{ed}")
+            tags = []
+            if c.get("status") == "superseded":
+                tags.append(f"superseded by #{c.get('superseded_by')}")
+            if c.get("edited"):
+                tags.append("edited")
+            if c.get("git_sha"):
+                tags.append(c["git_sha"][:8])
+            if c.get("about_date"):
+                tags.append(f"@{c['about_date']}")
+            suffix = ("  [" + ", ".join(tags) + "]") if tags else ""
+            print(f"  #{c.get('seq',0):<3} {c.get('ts','')[:19]}  {c.get('label','')}{suffix}")
     return 0
 
 
@@ -367,6 +399,10 @@ def cmd_show(args: argparse.Namespace) -> int:
         return 1
     print(f"#{n.get('seq')}  {n.get('label')}{'  (edited)' if n.get('edited') else ''}")
     print(f"  id      {n.get('id')}")
+    if n.get("status") == "superseded":
+        print(f"  status  SUPERSEDED by #{n.get('superseded_by')}")
+    else:
+        print("  status  active")
     print(f"  time    {n.get('ts')}")
     if n.get("about_date"):
         print(f"  day     {n['about_date']}")
@@ -399,15 +435,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd")
 
-    a = sub.add_parser("add", help="create a checkpoint (default command)")
-    a.add_argument("label", help="short label: what you built/decided")
+    a = sub.add_parser("add", help="record a decision (default command)")
+    a.add_argument("label", help="short label: the decision")
     a.add_argument("--project", "-p", help="project slug (default: inferred from git/cwd)")
-    a.add_argument("--note", "-n", help="longer note")
-    a.add_argument("--files", "-f", nargs="*", help="files (default: git changed files)")
-    a.add_argument("--commit", "-c", default="HEAD",
-                   help="commit to associate: HEAD (default), a sha/ref, or 'none' to add unbound")
-    a.add_argument("--date", "-d", help="'about' day this note belongs to (YYYY-MM-DD)")
-    a.add_argument("--no-git", action="store_true", help="don't capture git SHA/branch/files")
+    a.add_argument("--note", "-n", help="rationale / context / consequences")
+    a.add_argument("--commit", "-c", default=None,
+                   help="OPTIONAL related commit: HEAD or a sha/ref (default: not associated)")
+    a.add_argument("--files", "-f", nargs="*", help="optional related files")
+    a.add_argument("--date", "-d", help="'about' day this decision belongs to (YYYY-MM-DD)")
     a.set_defaults(func=cmd_add)
 
     e = sub.add_parser("edit", help="update a note's text (append-only amend)")
@@ -435,6 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--project", "-p", help="project slug (default: inferred)")
     r.set_defaults(func=cmd_rm)
 
+    x = sub.add_parser("supersede", help="mark a decision superseded by a newer one (kept, not deleted)")
+    x.add_argument("ref", help="the OLDER decision (seq or id)")
+    x.add_argument("--by", required=True, help="the NEWER decision that replaces it (seq or id)")
+    x.add_argument("--project", "-p", help="project slug (default: inferred)")
+    x.set_defaults(func=cmd_supersede)
+
     l = sub.add_parser("list", help="list checkpoints")
     l.add_argument("--project", "-p", help="project slug (default: all)")
     l.set_defaults(func=cmd_list)
@@ -453,7 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
-    known = {"add", "edit", "link", "at", "rm", "list", "show", "build", "-h", "--help"}
+    known = {"add", "edit", "link", "at", "rm", "supersede", "list", "show", "build", "-h", "--help"}
     if argv and argv[0] not in known:
         argv = ["add", *argv]  # bare `checkpoint "label"` → add
     args = parser.parse_args(argv)
